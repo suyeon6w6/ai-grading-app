@@ -2,16 +2,17 @@
 """
 서논술형 답안 자동 채점 웹앱
 실행: streamlit run app.py
+
+※ 입력 텍스트 영역과 채점 버튼을 st.form()으로 묶었습니다.
+   (일반 버튼은 텍스트를 입력하자마자 클릭하면 방금 입력한 값이 아직
+    위젯에 반영되기 전 상태로 읽혀 "채점 결과가 안 뜨는 것처럼" 보이는
+    경우가 있습니다. form은 '제출' 시점에만 값을 한 번에 읽어오므로
+    이 문제를 방지합니다.)
 """
 
 import streamlit as st
 from grading_data import SETS
-from grading_engine import (
-    grade_q1_blank,
-    grade_q2_pair,
-    grade_q3_pair,
-    _extract_label,
-)
+from grading_engine import grade_q1_blank, grade_q2_pair, grade_q3_pair
 
 st.set_page_config(page_title="서논술형 자동 채점", layout="wide")
 
@@ -46,40 +47,34 @@ if q_type.startswith("서·논술형1"):
     st.subheader(f"{current_set['label']} · 서·논술형1 — 빈칸 채우기")
     q1_config = current_set["q1"]
 
-    cols = st.columns(len(q1_config))
-    answers = {}
-    for col, (blank_name, cfg) in zip(cols, q1_config.items()):
-        with col:
-            answers[blank_name] = st.text_area(f"{blank_name} 답안", height=100, key=f"q1_{set_key}_{blank_name}")
+    with st.form(key=f"form_q1_{set_key}"):
+        cols = st.columns(len(q1_config))
+        answers = {}
+        for col, (blank_name, cfg) in zip(cols, q1_config.items()):
+            with col:
+                answers[blank_name] = st.text_area(f"{blank_name} 답안", height=100)
+        submitted = st.form_submit_button("채점하기", use_container_width=True)
 
-    if st.button("채점하기", key="grade_q1"):
+    if submitted:
         st.markdown("### 채점 결과")
         all_pass = True
         for blank_name, cfg in q1_config.items():
             result = grade_q1_blank(answers[blank_name], cfg)
             all_pass = all_pass and result["pass"]
-            st.markdown(f"**{blank_name}**")
+            st.markdown(f"**{blank_name}** — 내가 쓴 답: _{answers[blank_name] or '(미입력)'}_")
             show_verdict(result["pass"], result["reason"])
             with st.expander("세부 판정 근거 보기"):
                 st.json(result["detail"])
         st.divider()
         st.markdown(f"### 종합: {'✅ 전체 통과' if all_pass else '❌ 일부 미충족'}")
 
-    with st.expander("📌 모범 답안 참고 (교사용)"):
-        # q1의 모범 답안은 데이터에 없으므로 세트별 하드코딩 대신 안내만 표시
-        st.write("모범 답안은 별도 정리본을 참고하세요. (필수 요소 그룹은 아래 조건 참고)")
-        for blank_name, cfg in q1_config.items():
-            st.markdown(f"**{blank_name}**")
-            if "exact_terms" in cfg:
-                st.write(f"- 정확 명칭: {cfg['exact_terms']}")
-                st.write(f"- 혼동 개념(불인정): {cfg.get('confusable', [])}")
-            elif cfg.get("dual_requirement"):
-                st.write(f"- 결론 요소: {cfg['conclusion_required']}")
-                st.write(f"- 근거 요소: {cfg['reason_required']}")
-            else:
-                st.write(f"- 필수 요소 그룹: {cfg['required']}")
-                if cfg.get("reversal"):
-                    st.write(f"- 방향 반대(불인정) 키워드: {cfg['reversal']}")
+    st.divider()
+    st.markdown("#### 📌 모범 답안 보기")
+    for blank_name, cfg in q1_config.items():
+        with st.expander(f"{blank_name} 모범 답안 및 채점 힌트"):
+            st.markdown(f"**모범 답안 예시:** {cfg.get('sample_answer', '(준비 중)')}")
+            if cfg.get("hint"):
+                st.caption(cfg["hint"])
 
 # ---------------------------------------------------------------------------
 # 서·논술형 2
@@ -91,13 +86,15 @@ elif q_type.startswith("서·논술형2"):
     st.markdown(f"**주어진 첫 문장:** {q2_config['given_sentence']}")
     st.caption("문장 끝에 사용한 설명 방법을 괄호로 표기해 입력하세요. 예: `...효율적이다. (비교와 대조)`")
 
-    c1, c2 = st.columns(2)
-    with c1:
-        sent1 = st.text_area("(1) 문장 입력", height=120, key=f"q2_1_{set_key}")
-    with c2:
-        sent2 = st.text_area("(2) 문장 입력", height=120, key=f"q2_2_{set_key}")
+    with st.form(key=f"form_q2_{set_key}"):
+        c1, c2 = st.columns(2)
+        with c1:
+            sent1 = st.text_area("(1) 문장 입력", height=120)
+        with c2:
+            sent2 = st.text_area("(2) 문장 입력", height=120)
+        submitted = st.form_submit_button("채점하기", use_container_width=True)
 
-    if st.button("채점하기", key="grade_q2"):
+    if submitted:
         result = grade_q2_pair(sent1, sent2, q2_config["units"], q2_config["forbidden_external"])
         st.markdown("### 채점 결과")
         show_verdict(result["pass"], result["summary"])
@@ -141,13 +138,15 @@ else:
     q3_config = current_set["q3"]
     st.markdown(f"**장면1(참고, 대비 대상):** {q3_config['scene1_desc']}")
 
-    c1, c2 = st.columns(2)
-    with c1:
-        text_a = st.text_area("시각 요소(Ⓐ) + 효과 서술", height=160, key=f"q3_a_{set_key}")
-    with c2:
-        text_b = st.text_area("청각 요소(Ⓑ) + 효과 서술", height=160, key=f"q3_b_{set_key}")
+    with st.form(key=f"form_q3_{set_key}"):
+        c1, c2 = st.columns(2)
+        with c1:
+            text_a = st.text_area("시각 요소(Ⓐ) + 효과 서술", height=160)
+        with c2:
+            text_b = st.text_area("청각 요소(Ⓑ) + 효과 서술", height=160)
+        submitted = st.form_submit_button("채점하기", use_container_width=True)
 
-    if st.button("채점하기", key="grade_q3"):
+    if submitted:
         result = grade_q3_pair(text_a, text_b, q3_config)
         st.markdown("### 채점 결과")
         show_verdict(result["pass"])
