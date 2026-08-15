@@ -3,11 +3,16 @@
 서논술형 답안 자동 채점 웹앱
 실행: streamlit run app.py
 
-※ 입력 텍스트 영역과 채점 버튼을 st.form()으로 묶었습니다.
-   (일반 버튼은 텍스트를 입력하자마자 클릭하면 방금 입력한 값이 아직
+레이아웃
+--------
+- 화면 상단 탭(세트1 / 세트2 / 세트3)으로 세트를 직관적으로 선택.
+- 사이드바에서 문항(서·논술형1~3) 선택.
+- 모범 답안은 기본적으로 숨겨져 있고, expander를 클릭해야만 펼쳐짐.
+
+※ 입력 텍스트 영역과 채점 버튼은 st.form()으로 묶여 있습니다.
+   (일반 버튼은 텍스트 입력 직후 바로 클릭하면 방금 입력한 값이 아직
     위젯에 반영되기 전 상태로 읽혀 "채점 결과가 안 뜨는 것처럼" 보이는
-    경우가 있습니다. form은 '제출' 시점에만 값을 한 번에 읽어오므로
-    이 문제를 방지합니다.)
+    경우가 있어, form으로 제출 시점에만 값을 한 번에 읽어옵니다.)
 """
 
 import streamlit as st
@@ -17,11 +22,10 @@ from grading_engine import grade_q1_blank, grade_q2_pair, grade_q3_pair
 st.set_page_config(page_title="서논술형 자동 채점", layout="wide")
 
 st.title("📝 서논술형 답안 자동 채점 연습")
-st.caption("2회 시험 대비 · 세트별 서·논술형 1~3 자동 채점 도구 (규칙 기반 1차 스크리닝)")
+st.caption("2회 시험 대비 · 서·논술형 1~3 자동 채점 도구 (규칙 기반 1차 스크리닝)")
 
 with st.sidebar:
     st.header("문항 선택")
-    set_key = st.selectbox("세트", list(SETS.keys()), format_func=lambda k: SETS[k]["label"])
     q_type = st.radio("문항", ["서·논술형1 (빈칸 채우기)", "서·논술형2 (설명 방법 문장)", "서·논술형3 (영상 스토리보드)"])
     st.divider()
     st.info(
@@ -29,8 +33,6 @@ with st.sidebar:
         "'명칭-서술 불일치 의심' 등 플래그가 뜨는 경우는 "
         "반드시 채점자(교사)가 최종 확인해야 합니다."
     )
-
-current_set = SETS[set_key]
 
 
 def show_verdict(passed, reason=""):
@@ -40,10 +42,7 @@ def show_verdict(passed, reason=""):
         st.error(f"❌ 미충족  {('- ' + reason) if reason else ''}")
 
 
-# ---------------------------------------------------------------------------
-# 서·논술형 1
-# ---------------------------------------------------------------------------
-if q_type.startswith("서·논술형1"):
+def render_q1(set_key, current_set):
     st.subheader(f"{current_set['label']} · 서·논술형1 — 빈칸 채우기")
     q1_config = current_set["q1"]
 
@@ -69,17 +68,16 @@ if q_type.startswith("서·논술형1"):
         st.markdown(f"### 종합: {'✅ 전체 통과' if all_pass else '❌ 일부 미충족'}")
 
     st.divider()
-    st.markdown("#### 📌 모범 답안 보기")
-    for blank_name, cfg in q1_config.items():
-        with st.expander(f"{blank_name} 모범 답안 및 채점 힌트"):
-            st.markdown(f"**모범 답안 예시:** {cfg.get('sample_answer', '(준비 중)')}")
+    with st.expander("📌 모범 답안 보기 (클릭해서 확인)"):
+        for blank_name, cfg in q1_config.items():
+            st.markdown(f"**{blank_name}**")
+            st.markdown(f"모범 답안 예시: {cfg.get('sample_answer', '(준비 중)')}")
             if cfg.get("hint"):
                 st.caption(cfg["hint"])
+            st.markdown("---")
 
-# ---------------------------------------------------------------------------
-# 서·논술형 2
-# ---------------------------------------------------------------------------
-elif q_type.startswith("서·논술형2"):
+
+def render_q2(set_key, current_set):
     st.subheader(f"{current_set['label']} · 서·논술형2 — 설명 방법 활용 문장 쓰기")
     q2_config = current_set["q2"]
 
@@ -123,17 +121,15 @@ elif q_type.startswith("서·논술형2"):
             st.error("🚫 (1)과 (2)에 동일한 설명 방법이 중복 사용되었습니다. 조건 위반으로 자동 오답 처리됩니다.")
 
     st.divider()
-    st.markdown("#### 📌 선택지(설명 방법)별 모범 답안")
-    sample_cols = st.columns(len(q2_config["sample_answers"]))
-    for col, (method, sample) in zip(sample_cols, q2_config["sample_answers"].items()):
-        with col:
-            st.markdown(f"**{method}**")
-            st.info(sample)
+    with st.expander("📌 선택지(설명 방법)별 모범 답안 보기 (클릭해서 확인)"):
+        sample_cols = st.columns(len(q2_config["sample_answers"]))
+        for col, (method, sample) in zip(sample_cols, q2_config["sample_answers"].items()):
+            with col:
+                st.markdown(f"**{method}**")
+                st.info(sample)
 
-# ---------------------------------------------------------------------------
-# 서·논술형 3
-# ---------------------------------------------------------------------------
-else:
+
+def render_q3(set_key, current_set):
     st.subheader(f"{current_set['label']} · 서·논술형3 — 영상 스토리보드")
     q3_config = current_set["q3"]
     st.markdown(f"**장면1(참고, 대비 대상):** {q3_config['scene1_desc']}")
@@ -164,10 +160,32 @@ else:
             st.write(f"- 필수 요소 충족: {rb['required_ok']} / 장면1 대비 충족: {rb['contrast_ok']}")
 
     st.divider()
-    st.markdown("#### 📌 모범 답안 참고")
-    sample = q3_config["sample_answer"]
-    st.info(f"**시각 요소(Ⓐ):** {sample['A']}\n\n**효과:** {sample['A_effect']}")
-    st.info(f"**청각 요소(Ⓑ):** {sample['B']}\n\n**효과:** {sample['B_effect']}")
+    with st.expander("📌 모범 답안 보기 (클릭해서 확인)"):
+        sample = q3_config["sample_answer"]
+        st.info(f"**시각 요소(Ⓐ):** {sample['A']}\n\n**효과:** {sample['A_effect']}")
+        st.info(f"**청각 요소(Ⓑ):** {sample['B']}\n\n**효과:** {sample['B_effect']}")
+
+
+def render_set(set_key):
+    current_set = SETS[set_key]
+    if q_type.startswith("서·논술형1"):
+        render_q1(set_key, current_set)
+    elif q_type.startswith("서·논술형2"):
+        render_q2(set_key, current_set)
+    else:
+        render_q3(set_key, current_set)
+
+
+# ---------------------------------------------------------------------------
+# 세트 탭 — 세트1 / 세트2 / 세트3 이 직관적으로 보이도록 상단 탭으로 구성
+# ---------------------------------------------------------------------------
+set_keys = list(SETS.keys())
+tab_labels = [f"🔵 {SETS[k]['label']}" for k in set_keys]
+tabs = st.tabs(tab_labels)
+
+for tab, set_key in zip(tabs, set_keys):
+    with tab:
+        render_set(set_key)
 
 st.divider()
 st.caption(
